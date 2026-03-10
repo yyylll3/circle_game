@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1" />
+  <title>画圆大作战 - 多人评分排名</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans SC', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      color: #e8e8e8;
+      overflow-x: hidden;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: none;
+    }
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 12px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    h1 {
+      text-align: center;
+      font-size: 1.4rem;
+      margin-bottom: 8px;
+      background: linear-gradient(90deg, #00d9ff, #00ff88);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .score-board {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 12px;
+    }
+    .current-score { font-size: 1.2rem; font-weight: 700; color: #00ff88; }
+    .hint { font-size: 0.75rem; color: #888; }
+    .criteria-doc {
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 12px;
+      font-size: 0.8rem;
+      color: #aaa;
+    }
+    .criteria-doc h3 { font-size: 0.85rem; color: #00d9ff; margin-bottom: 6px; }
+    .criteria-doc ul { margin-left: 14px; }
+    .criteria-doc li { margin: 2px 0; }
+    .score-detail {
+      margin-bottom: 10px;
+      padding: 10px 12px;
+      background: rgba(0,255,136,0.08);
+      border-radius: 12px;
+      border: 1px solid rgba(0,255,136,0.2);
+      font-size: 0.85rem;
+      display: none;
+    }
+    .score-detail.visible { display: block; }
+    .score-detail .total { font-size: 1.1rem; font-weight: 700; color: #00ff88; margin-bottom: 8px; }
+    .score-detail .row { display: flex; justify-content: space-between; padding: 4px 0; }
+    .score-detail .label { color: #aaa; }
+    .score-detail .value { color: #00d9ff; font-weight: 600; }
+    #canvasWrap {
+      flex: 1;
+      position: relative;
+      background: rgba(0,0,0,0.3);
+      border-radius: 16px;
+      overflow: hidden;
+      touch-action: none;
+    }
+    #canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-height: 60vh;
+      margin: 0 auto;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    .controls {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .controls input, .controls button {
+      padding: 10px 14px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.2);
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
+    .controls input {
+      flex: 1;
+      min-width: 100px;
+      background: rgba(255,255,255,0.1);
+      color: #fff;
+    }
+    .controls input::placeholder { color: #888; }
+    .btn {
+      background: linear-gradient(135deg, #00d9ff, #0099cc);
+      color: #fff;
+      border: none;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn.secondary { background: linear-gradient(135deg, #555, #333); }
+    .ranking {
+      margin-top: 16px;
+      padding: 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 12px;
+    }
+    .ranking h2 {
+      font-size: 1rem;
+      margin-bottom: 8px;
+      color: #00d9ff;
+    }
+    #rankingList {
+      list-style: none;
+    }
+    #rankingList li {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      font-size: 0.9rem;
+    }
+    #rankingList li:last-child { border-bottom: none; }
+    #rankingList .rank { color: #00ff88; font-weight: 700; margin-right: 8px; }
+    #rankingList .name { flex: 1; }
+    #rankingList .score { color: #00d9ff; font-weight: 700; }
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      padding: 10px 20px;
+      background: rgba(0,255,136,0.9);
+      color: #111;
+      border-radius: 20px;
+      font-weight: 700;
+      z-index: 100;
+      opacity: 0;
+      transition: transform 0.3s, opacity 0.3s;
+    }
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>画圆大作战</h1>
+    <div class="score-board">
+      <span class="current-score">本轮得分: <span id="scoreDisplay">--</span></span>
+      <span class="hint">用手指画一个圆，越圆分数越高</span>
+    </div>
+    <div class="criteria-doc">
+      <h3>📐 评分标准</h3>
+      <ul>
+        <li><strong>圆度（对称性）</strong>：轨迹与理想圆的接近程度，越圆得分越高。</li>
+        <li><strong>封口性</strong>：起点与终点的闭合程度，首尾相接越好得分越高。</li>
+        <li><strong>流畅度</strong>：笔画是否均匀顺滑，无抖动、无突然拐弯得分越高。</li>
+      </ul>
+      <p style="margin-top:6px;color:#666">总分 = 圆度×50% + 封口性×30% + 流畅度×20%</p>
+    </div>
+    <div class="score-detail" id="scoreDetail">
+      <div class="total">本轮总分: <span id="scoreDetailTotal">--</span></div>
+      <div class="row"><span class="label">圆度（对称性）</span><span class="value" id="detailCircularity">--</span></div>
+      <div class="row"><span class="label">封口性</span><span class="value" id="detailClosure">--</span></div>
+      <div class="row"><span class="label">流畅度</span><span class="value" id="detailSmoothness">--</span></div>
+    </div>
+    <div id="canvasWrap">
+      <canvas id="canvas" width="400" height="400"></canvas>
+    </div>
+    <div class="controls">
+      <input type="text" id="playerName" placeholder="输入昵称提交排名" maxlength="20" />
+      <button class="btn" id="submitBtn">提交分数</button>
+      <button class="btn secondary" id="clearBtn">重画</button>
+    </div>
+    <div class="ranking">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+        <h2 style="margin:0;">🏆 全网排名</h2>
+        <span>
+          <button class="btn secondary" id="refreshRankBtn" style="padding:6px 12px;font-size:0.8rem;">刷新</button>
+          <button class="btn secondary" id="resetRankBtn" style="padding:6px 12px;font-size:0.8rem;margin-left:6px;">清空排名</button>
+        </span>
+      </div>
+      <ul id="rankingList"></ul>
+      <p class="hint" style="margin-top:8px;font-size:0.75rem;" id="rankHint">排名数据来自 Supabase，提交分数即参与全网排名</p>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (function () {
+      // ========== Supabase 全网排名配置 ==========
+      // 1. 在 https://supabase.com 创建项目
+      // 2. 在 SQL Editor 中执行项目里的 supabase-setup.sql 建表
+      // 3. 在 Settings -> API 复制 URL 和 anon public key 填到下面
+      const SUPABASE_URL = 'https://qyiqzwhjjpnxolnruvnx.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF5aXF6d2hqanBueG9sbnJ1dm54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxNDc2MjgsImV4cCI6MjA4ODcyMzYyOH0.J8YBtWN1Si3JqX3EA8BzQJ2VbCKwz43B1Nv-UdMySok';
+      const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY)
+        ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+        : null;
+
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      const scoreDisplay = document.getElementById('scoreDisplay');
+      const playerNameInput = document.getElementById('playerName');
+      const submitBtn = document.getElementById('submitBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const refreshRankBtn = document.getElementById('refreshRankBtn');
+      const resetRankBtn = document.getElementById('resetRankBtn');
+      const rankingList = document.getElementById('rankingList');
+      const toast = document.getElementById('toast');
+      const scoreDetailEl = document.getElementById('scoreDetail');
+      const scoreDetailTotal = document.getElementById('scoreDetailTotal');
+      const detailCircularity = document.getElementById('detailCircularity');
+      const detailClosure = document.getElementById('detailClosure');
+      const detailSmoothness = document.getElementById('detailSmoothness');
+
+      let points = [];
+      let isDrawing = false;
+      let currentScore = null;
+      const API_BASE = window.location.origin;
+
+      function resizeCanvas() {
+        const wrap = document.getElementById('canvasWrap');
+        const rect = wrap.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        const w = Math.floor(rect.width);
+        const h = Math.min(Math.floor(rect.height), window.innerHeight * 0.55);
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        ctx.scale(dpr, dpr);
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#00d9ff';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        redraw();
+      }
+
+      function redraw() {
+        const dpr = window.devicePixelRatio || 1;
+        const w = canvas.width / dpr, h = canvas.height / dpr;
+        ctx.clearRect(0, 0, w, h);
+        if (points.length < 2) return;
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+        ctx.stroke();
+      }
+
+      function getPoint(e) {
+        const rect = canvas.getBoundingClientRect();
+        const touch = e.touches ? e.touches[0] : e;
+        const x = touch.clientX - rect.left;
+        const y = touch.clientY - rect.top;
+        return { x, y };
+      }
+
+      function onStart(e) {
+        e.preventDefault();
+        isDrawing = true;
+        points = [];
+        currentScore = null;
+        scoreDisplay.textContent = '--';
+        scoreDetailEl.classList.remove('visible');
+        const p = getPoint(e);
+        points.push(p);
+        redraw();
+      }
+
+      function onMove(e) {
+        e.preventDefault();
+        if (!isDrawing) return;
+        const p = getPoint(e);
+        points.push(p);
+        redraw();
+      }
+
+      function onEnd(e) {
+        e.preventDefault();
+        if (!isDrawing) return;
+        isDrawing = false;
+        if (points.length >= 20) {
+          const result = computeCircleScore(points);
+          currentScore = Math.round(result.total);
+          scoreDisplay.textContent = currentScore;
+          scoreDetailTotal.textContent = currentScore;
+          detailCircularity.textContent = Math.round(result.circularity) + ' 分';
+          detailClosure.textContent = Math.round(result.closure) + ' 分';
+          detailSmoothness.textContent = Math.round(result.smoothness) + ' 分';
+          scoreDetailEl.classList.add('visible');
+        } else {
+          scoreDisplay.textContent = '再画长一点';
+          scoreDetailEl.classList.remove('visible');
+        }
+      }
+
+      function computeCircleScore(pts) {
+        const n = pts.length;
+        const zero = { total: 0, circularity: 0, closure: 0, smoothness: 0 };
+        if (n < 20) return zero;
+        let sumX = 0, sumY = 0;
+        for (let i = 0; i < n; i++) { sumX += pts[i].x; sumY += pts[i].y; }
+        const cx = sumX / n, cy = sumY / n;
+        let sumR = 0;
+        for (let i = 0; i < n; i++) {
+          sumR += Math.sqrt((pts[i].x - cx) ** 2 + (pts[i].y - cy) ** 2);
+        }
+        const R = sumR / n;
+        if (R < 5) return zero;
+        let error = 0;
+        for (let i = 0; i < n; i++) {
+          const r = Math.sqrt((pts[i].x - cx) ** 2 + (pts[i].y - cy) ** 2);
+          error += (r - R) ** 2;
+        }
+        const rmse = Math.sqrt(error / n);
+        const circularity = (1 - Math.min(rmse / R, 1)) * 100;
+        const closure = (function () {
+          const a = pts[0], b = pts[n - 1];
+          const d = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+          return Math.max(0, 1 - d / (R * 2)) * 100;
+        })();
+        const smoothness = (function () {
+          const dists = [];
+          for (let i = 1; i < n; i++) {
+            dists.push(Math.sqrt((pts[i].x - pts[i-1].x) ** 2 + (pts[i].y - pts[i-1].y) ** 2));
+          }
+          const mean = dists.reduce(function (a, b) { return a + b; }, 0) / dists.length;
+          let variance = 0;
+          for (let i = 0; i < dists.length; i++) variance += (dists[i] - mean) ** 2;
+          variance /= dists.length;
+          const cv = mean > 1e-6 ? Math.sqrt(variance) / mean : 0;
+          return Math.max(0, 1 - Math.min(cv, 1)) * 100;
+        })();
+        const total = circularity * 0.5 + closure * 0.3 + smoothness * 0.2;
+        return {
+          total: Math.min(100, Math.max(0, total)),
+          circularity: Math.min(100, circularity),
+          closure: Math.min(100, closure),
+          smoothness: Math.min(100, smoothness)
+        };
+      }
+
+      canvas.addEventListener('mousedown', onStart);
+      canvas.addEventListener('mousemove', onMove);
+      canvas.addEventListener('mouseup', onEnd);
+      canvas.addEventListener('mouseleave', onEnd);
+      canvas.addEventListener('touchstart', onStart, { passive: false });
+      canvas.addEventListener('touchmove', onMove, { passive: false });
+      canvas.addEventListener('touchend', onEnd, { passive: false });
+
+      clearBtn.addEventListener('click', function () {
+        points = [];
+        currentScore = null;
+        scoreDisplay.textContent = '--';
+        scoreDetailEl.classList.remove('visible');
+        redraw();
+      });
+
+      function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        setTimeout(function () { toast.classList.remove('show'); }, 2000);
+      }
+
+      function loadRanking() {
+        if (!supabase) {
+          rankingList.innerHTML = '<li style="color:#888;">请配置 SUPABASE_URL 和 SUPABASE_ANON_KEY 后刷新</li>';
+          return;
+        }
+        supabase
+          .from('rankings')
+          .select('player_name, score, created_at')
+          .order('score', { ascending: false })
+          .limit(50)
+          .then(function (result) {
+            rankingList.innerHTML = '';
+            if (result.error) {
+              rankingList.innerHTML = '<li style="color:#f88;">加载失败: ' + escapeHtml(result.error.message) + '</li>';
+              return;
+            }
+            const list = result.data || [];
+            if (list.length === 0) {
+              rankingList.innerHTML = '<li style="color:#888;">暂无排名，快来提交第一个分数吧</li>';
+              return;
+            }
+            list.forEach(function (item, i) {
+              const li = document.createElement('li');
+              li.innerHTML = '<span class="rank">' + (i + 1) + '</span><span class="name">' + escapeHtml(item.player_name || '匿名') + '</span><span class="score">' + item.score + '</span>';
+              rankingList.appendChild(li);
+            });
+          })
+          .catch(function (err) {
+            rankingList.innerHTML = '<li style="color:#f88;">加载失败，请检查网络或 Supabase 配置</li>';
+          });
+      }
+
+      function escapeHtml(s) {
+        const div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+      }
+
+      submitBtn.addEventListener('click', function () {
+        const name = (playerNameInput.value || '匿名').trim().slice(0, 20);
+        if (currentScore === null) {
+          showToast('请先画一个圆再提交');
+          return;
+        }
+        if (!supabase) {
+          showToast('请先配置 Supabase 以使用全网排名');
+          return;
+        }
+        supabase
+          .from('rankings')
+          .insert([{ player_name: name, score: currentScore }])
+          .then(function (result) {
+            if (result.error) {
+              showToast('提交失败: ' + (result.error.message || '请检查 Supabase 表与 RLS'));
+              return;
+            }
+            showToast('提交成功！已加入全网排名');
+            loadRanking();
+          })
+          .catch(function () {
+            showToast('提交失败，请检查网络或 Supabase 配置');
+          });
+      });
+
+      refreshRankBtn.addEventListener('click', function () {
+        loadRanking();
+        showToast('已刷新排名');
+      });
+
+      resetRankBtn.addEventListener('click', function () {
+        if (!supabase) {
+          showToast('请先配置 Supabase');
+          return;
+        }
+        var pwd = prompt('请输入重置密码（管理员）');
+        if (pwd === null || pwd === '') return;
+        supabase.rpc('reset_rankings', { secret: pwd })
+          .then(function (result) {
+            if (result.error) {
+              showToast('清空失败: ' + (result.error.message || '请检查是否已执行 supabase-setup.sql 中的 RPC 部分'));
+              return;
+            }
+            var data = result.data;
+            if (data && data.ok) {
+              showToast('排名已清空');
+              loadRanking();
+            } else {
+              showToast(data && data.error ? data.error : '密码错误');
+            }
+          })
+          .catch(function () {
+            showToast('清空失败，请检查网络');
+          });
+      });
+
+      resizeCanvas();
+      window.addEventListener('resize', resizeCanvas);
+      loadRanking();
+      setInterval(loadRanking, 8000);
+    })();
+  </script>
+</body>
+</html>
