@@ -88,6 +88,22 @@
       touch-action: none;
       min-height: 240px;
     }
+    .canvas-hint {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      text-align: center;
+      color: rgba(255,255,255,0.7);
+      font-size: 0.9rem;
+      pointer-events: none;
+      z-index: 1;
+      padding: 0 16px;
+    }
+    .canvas-hint.hidden {
+      display: none;
+    }
     #canvas {
       display: block;
       width: 100%;
@@ -171,6 +187,33 @@
       transform: translateX(-50%) translateY(0);
       opacity: 1;
     }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-overlay.show {
+      display: flex;
+    }
+    .modal-content {
+      background: linear-gradient(180deg, #1a1a2e, #16213e);
+      border-radius: 16px;
+      padding: 20px;
+      max-width: 400px;
+      width: 100%;
+      border: 1px solid rgba(0,217,255,0.3);
+    }
+    .admin-stats {
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: #ccc;
+    }
+    .admin-stats .row { display: flex; justify-content: space-between; padding: 4px 0; }
     @media (max-width: 480px) {
       .container { padding: 10px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
       h1 { font-size: 1.25rem; }
@@ -181,27 +224,27 @@
 <body>
   <div class="container">
     <h1>画圆大作战</h1>
-    <div class="score-board">
-      <span class="current-score">本轮得分: <span id="scoreDisplay">--</span></span>
-      <span class="hint">用手指画一个圆，越圆分数越高</span>
+    <div id="canvasWrap">
+      <div class="canvas-hint" id="canvasHint">用手指绘制一个圆圈，一笔完成。</div>
+      <canvas id="canvas" width="400" height="400"></canvas>
+    </div>
+    <div class="score-detail" id="scoreDetail">
+      <div class="total">本轮总分: <span id="scoreDetailTotal">--</span></div>
+      <div class="row"><span class="label">本轮用时</span><span class="value" id="detailDuration">--</span></div>
+      <div class="row"><span class="label">圆度（对称性）</span><span class="value" id="detailCircularity">--</span></div>
+      <div class="row"><span class="label">封口性</span><span class="value" id="detailClosure">--</span></div>
+      <div class="row"><span class="label">流畅度</span><span class="value" id="detailSmoothness">--</span></div>
+      <div class="row"><span class="label">速度</span><span class="value" id="detailSpeed">--</span></div>
     </div>
     <div class="criteria-doc">
       <h3>📐 评分标准</h3>
       <ul>
-        <li><strong>圆度（对称性）</strong>：轨迹与理想圆的接近程度，越圆得分越高。</li>
+        <li><strong>圆度（对称性）</strong>：轨迹与理想圆的接近程度，标准已加严，越圆得分越高。</li>
         <li><strong>封口性</strong>：起点与终点的闭合程度，首尾相接越好得分越高。</li>
         <li><strong>流畅度</strong>：笔画是否均匀顺滑，无抖动、无突然拐弯得分越高。</li>
+        <li><strong>速度</strong>：在保证质量前提下，完成速度适中可得更高分，用于同分时区分排名。</li>
       </ul>
-      <p style="margin-top:6px;color:#666">总分 = 圆度×50% + 封口性×30% + 流畅度×20%</p>
-    </div>
-    <div class="score-detail" id="scoreDetail">
-      <div class="total">本轮总分: <span id="scoreDetailTotal">--</span></div>
-      <div class="row"><span class="label">圆度（对称性）</span><span class="value" id="detailCircularity">--</span></div>
-      <div class="row"><span class="label">封口性</span><span class="value" id="detailClosure">--</span></div>
-      <div class="row"><span class="label">流畅度</span><span class="value" id="detailSmoothness">--</span></div>
-    </div>
-    <div id="canvasWrap">
-      <canvas id="canvas" width="400" height="400"></canvas>
+      <p style="margin-top:6px;color:#666">总分 = 圆度×45% + 封口性×27% + 流畅度×18% + 速度×10%</p>
     </div>
     <div class="controls">
       <input type="text" id="playerName" placeholder="输入昵称提交排名" maxlength="20" />
@@ -214,6 +257,7 @@
         <span>
           <button class="btn secondary" id="refreshRankBtn" style="padding:6px 12px;font-size:0.8rem;">刷新</button>
           <button class="btn secondary" id="resetRankBtn" style="padding:6px 12px;font-size:0.8rem;margin-left:6px;">清空排名</button>
+          <button class="btn secondary" id="adminResultBtn" style="padding:6px 12px;font-size:0.8rem;margin-left:6px;">结果展示</button>
         </span>
       </div>
       <ul id="rankingList"></ul>
@@ -221,6 +265,18 @@
     </div>
   </div>
   <div class="toast" id="toast"></div>
+
+  <div class="modal-overlay" id="adminResultModal">
+    <div class="modal-content">
+      <h3 style="margin:0 0 12px 0;color:#00d9ff;">最终结果与画法比例</h3>
+      <div id="adminStats" class="admin-stats"></div>
+      <div style="margin-top:12px;">
+        <strong style="color:#00ff88;">最终排名（前10）</strong>
+        <ul id="adminRankList" style="list-style:none;margin:8px 0 0 0;padding:0;"></ul>
+      </div>
+      <button class="btn" id="adminModalClose" style="margin-top:16px;">关闭</button>
+    </div>
+  </div>
 
   <script>
     (function () {
@@ -236,23 +292,32 @@
 
       const canvas = document.getElementById('canvas');
       const ctx = canvas.getContext('2d');
-      const scoreDisplay = document.getElementById('scoreDisplay');
+      const canvasHint = document.getElementById('canvasHint');
       const playerNameInput = document.getElementById('playerName');
       const submitBtn = document.getElementById('submitBtn');
       const clearBtn = document.getElementById('clearBtn');
       const refreshRankBtn = document.getElementById('refreshRankBtn');
       const resetRankBtn = document.getElementById('resetRankBtn');
+      const adminResultBtn = document.getElementById('adminResultBtn');
       const rankingList = document.getElementById('rankingList');
+      const adminResultModal = document.getElementById('adminResultModal');
+      const adminStats = document.getElementById('adminStats');
+      const adminRankList = document.getElementById('adminRankList');
+      const adminModalClose = document.getElementById('adminModalClose');
       const toast = document.getElementById('toast');
       const scoreDetailEl = document.getElementById('scoreDetail');
       const scoreDetailTotal = document.getElementById('scoreDetailTotal');
+      const detailDuration = document.getElementById('detailDuration');
       const detailCircularity = document.getElementById('detailCircularity');
       const detailClosure = document.getElementById('detailClosure');
       const detailSmoothness = document.getElementById('detailSmoothness');
+      const detailSpeed = document.getElementById('detailSpeed');
 
       let points = [];
       let isDrawing = false;
       let currentScore = null;
+      let drawStartStamp = 0;
+      let lastWinding = '';
       const API_BASE = window.location.origin;
 
       function resizeCanvas() {
@@ -297,7 +362,8 @@
         isDrawing = true;
         points = [];
         currentScore = null;
-        scoreDisplay.textContent = '--';
+        drawStartStamp = (e && e.timeStamp != null) ? e.timeStamp : Date.now();
+        if (canvasHint) canvasHint.classList.add('hidden');
         scoreDetailEl.classList.remove('visible');
         const p = getPoint(e);
         points.push(p);
@@ -317,27 +383,45 @@
         if (!isDrawing) return;
         isDrawing = false;
         if (points.length >= 20) {
-          const result = computeCircleScore(points);
+          var endStamp = (e && e.timeStamp != null) ? e.timeStamp : Date.now();
+          const durationMs = drawStartStamp > 0 ? (endStamp - drawStartStamp) : 0;
+          const result = computeCircleScore(points, durationMs);
           currentScore = Math.round(result.total);
-          scoreDisplay.textContent = currentScore;
           scoreDetailTotal.textContent = currentScore;
+          detailDuration.textContent = (durationMs / 1000).toFixed(1) + ' 秒';
           detailCircularity.textContent = Math.round(result.circularity) + ' 分';
           detailClosure.textContent = Math.round(result.closure) + ' 分';
           detailSmoothness.textContent = Math.round(result.smoothness) + ' 分';
+          detailSpeed.textContent = Math.round(result.speed) + ' 分';
+          lastWinding = result.winding || '';
           scoreDetailEl.classList.add('visible');
         } else {
-          scoreDisplay.textContent = '再画长一点';
           scoreDetailEl.classList.remove('visible');
+          if (canvasHint) canvasHint.classList.remove('hidden');
         }
       }
 
-      function computeCircleScore(pts) {
+      function strictScore(raw) {
+        if (raw <= 0) return 0;
+        return 100 * Math.pow(Math.min(100, Math.max(0, raw)) / 100, 1.22);
+      }
+
+      function computeCircleScore(pts, durationMs) {
         const n = pts.length;
-        const zero = { total: 0, circularity: 0, closure: 0, smoothness: 0 };
+        const zero = { total: 0, circularity: 0, closure: 0, smoothness: 0, speed: 0, winding: '' };
         if (n < 20) return zero;
         let sumX = 0, sumY = 0;
         for (let i = 0; i < n; i++) { sumX += pts[i].x; sumY += pts[i].y; }
         const cx = sumX / n, cy = sumY / n;
+        var winding = '';
+        if (n >= 3) {
+          var crossSum = 0;
+          for (var i = 0; i < n; i++) {
+            var j = (i + 1) % n;
+            crossSum += (pts[i].x - cx) * (pts[j].y - cy) - (pts[i].y - cy) * (pts[j].x - cx);
+          }
+          winding = crossSum > 0 ? 'clockwise' : (crossSum < 0 ? 'counterclockwise' : '');
+        }
         let sumR = 0;
         for (let i = 0; i < n; i++) {
           sumR += Math.sqrt((pts[i].x - cx) ** 2 + (pts[i].y - cy) ** 2);
@@ -350,13 +434,15 @@
           error += (r - R) ** 2;
         }
         const rmse = Math.sqrt(error / n);
-        const circularity = (1 - Math.min(rmse / R, 1)) * 100;
-        const closure = (function () {
+        const circularityRaw = (1 - Math.min(rmse / R, 1)) * 100;
+        const circularity = strictScore(circularityRaw);
+        const closureRaw = (function () {
           const a = pts[0], b = pts[n - 1];
           const d = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
           return Math.max(0, 1 - d / (R * 2)) * 100;
         })();
-        const smoothness = (function () {
+        const closure = strictScore(closureRaw);
+        const smoothnessRaw = (function () {
           const dists = [];
           for (let i = 1; i < n; i++) {
             dists.push(Math.sqrt((pts[i].x - pts[i-1].x) ** 2 + (pts[i].y - pts[i-1].y) ** 2));
@@ -368,12 +454,20 @@
           const cv = mean > 1e-6 ? Math.sqrt(variance) / mean : 0;
           return Math.max(0, 1 - Math.min(cv, 1)) * 100;
         })();
-        const total = circularity * 0.5 + closure * 0.3 + smoothness * 0.2;
+        const smoothness = strictScore(smoothnessRaw);
+        var speed = 0;
+        if (durationMs > 0) {
+          var durationSec = durationMs / 1000;
+          speed = Math.max(0, Math.min(100, 100 - durationSec * 12));
+        }
+        const total = circularity * 0.45 + closure * 0.27 + smoothness * 0.18 + speed * 0.1;
         return {
           total: Math.min(100, Math.max(0, total)),
           circularity: Math.min(100, circularity),
           closure: Math.min(100, closure),
-          smoothness: Math.min(100, smoothness)
+          smoothness: Math.min(100, smoothness),
+          speed: Math.min(100, speed),
+          winding: winding
         };
       }
 
@@ -388,7 +482,7 @@
       clearBtn.addEventListener('click', function () {
         points = [];
         currentScore = null;
-        scoreDisplay.textContent = '--';
+        if (canvasHint) canvasHint.classList.remove('hidden');
         scoreDetailEl.classList.remove('visible');
         redraw();
       });
@@ -408,21 +502,29 @@
           .from('rankings')
           .select('player_name, score, created_at')
           .order('score', { ascending: false })
-          .limit(50)
+          .limit(300)
           .then(function (result) {
             rankingList.innerHTML = '';
             if (result.error) {
               rankingList.innerHTML = '<li style="color:#f88;">加载失败: ' + escapeHtml(result.error.message) + '</li>';
               return;
             }
-            const list = result.data || [];
+            const raw = result.data || [];
+            var byName = {};
+            raw.forEach(function (item) {
+              var name = item.player_name || '匿名';
+              if (!byName[name] || item.score > byName[name]) byName[name] = item.score;
+            });
+            var list = Object.keys(byName).map(function (name) { return { player_name: name, score: byName[name] }; });
+            list.sort(function (a, b) { return b.score - a.score; });
+            list = list.slice(0, 50);
             if (list.length === 0) {
               rankingList.innerHTML = '<li style="color:#888;">暂无排名，快来提交第一个分数吧</li>';
               return;
             }
             list.forEach(function (item, i) {
               const li = document.createElement('li');
-              li.innerHTML = '<span class="rank">' + (i + 1) + '</span><span class="name">' + escapeHtml(item.player_name || '匿名') + '</span><span class="score">' + item.score + '</span>';
+              li.innerHTML = '<span class="rank">' + (i + 1) + '</span><span class="name">' + escapeHtml(item.player_name) + '</span><span class="score">' + item.score + '</span>';
               rankingList.appendChild(li);
             });
           })
@@ -449,13 +551,13 @@
         }
         supabase
           .from('rankings')
-          .insert([{ player_name: name, score: currentScore }])
+          .insert([{ player_name: name, score: currentScore, winding: lastWinding || null }])
           .then(function (result) {
             if (result.error) {
               showToast('提交失败: ' + (result.error.message || '请检查 Supabase 表与 RLS'));
               return;
             }
-            showToast('提交成功！已加入全网排名');
+            showToast('提交成功！排名按同昵称最高分显示');
             loadRanking();
           })
           .catch(function () {
@@ -466,6 +568,62 @@
       refreshRankBtn.addEventListener('click', function () {
         loadRanking();
         showToast('已刷新排名');
+      });
+
+      adminResultBtn.addEventListener('click', function () {
+        if (!supabase) {
+          showToast('请先配置 Supabase');
+          return;
+        }
+        var pwd = prompt('请输入管理员密码查看最终结果与画法比例');
+        if (pwd === null || pwd === '') return;
+        supabase.rpc('check_admin', { secret: pwd })
+          .then(function (res) {
+            if (res.error || !res.data || !res.data.ok) {
+              showToast(res.data && res.data.error ? res.data.error : '密码错误');
+              return;
+            }
+            supabase.from('rankings').select('player_name, score, winding').order('score', { ascending: false }).limit(1000)
+              .then(function (r) {
+                if (r.error) {
+                  showToast('获取数据失败');
+                  return;
+                }
+                var data = r.data || [];
+                var total = data.length;
+                var cw = data.filter(function (x) { return x.winding === 'clockwise'; }).length;
+                var ccw = data.filter(function (x) { return x.winding === 'counterclockwise'; }).length;
+                var unknown = total - cw - ccw;
+                adminStats.innerHTML =
+                  '<div class="row"><span>参与总人次</span><span>' + total + '</span></div>' +
+                  '<div class="row"><span>逆时针画法</span><span>' + (total ? (ccw / total * 100).toFixed(1) : '0') + '%</span></div>' +
+                  '<div class="row"><span>顺时针画法</span><span>' + (total ? (cw / total * 100).toFixed(1) : '0') + '%</span></div>' +
+                  '<div class="row"><span>未记录方向</span><span>' + (total ? (unknown / total * 100).toFixed(1) : '0') + '%</span></div>';
+                var byName = {};
+                data.forEach(function (item) {
+                  var name = item.player_name || '匿名';
+                  if (!byName[name] || item.score > byName[name]) byName[name] = item.score;
+                });
+                var top10 = Object.keys(byName).map(function (name) { return { player_name: name, score: byName[name] }; })
+                  .sort(function (a, b) { return b.score - a.score; }).slice(0, 10);
+                adminRankList.innerHTML = '';
+                top10.forEach(function (item, i) {
+                  var li = document.createElement('li');
+                  li.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.08);';
+                  li.innerHTML = '<span>' + (i + 1) + '. ' + escapeHtml(item.player_name) + '</span><span style="color:#00d9ff;font-weight:700;">' + item.score + '</span>';
+                  adminRankList.appendChild(li);
+                });
+                if (adminResultModal) adminResultModal.classList.add('show');
+              });
+          })
+          .catch(function () { showToast('验证失败'); });
+      });
+
+      if (adminModalClose) adminModalClose.addEventListener('click', function () {
+        if (adminResultModal) adminResultModal.classList.remove('show');
+      });
+      if (adminResultModal) adminResultModal.addEventListener('click', function (e) {
+        if (e.target === adminResultModal) adminResultModal.classList.remove('show');
       });
 
       resetRankBtn.addEventListener('click', function () {

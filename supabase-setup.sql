@@ -26,6 +26,9 @@ create policy "允许所有人提交分数"
 
 comment on table public.rankings is '画圆大作战全网排名';
 
+-- 画法方向：用于统计逆时针/顺时针比例（可选，旧数据为 null）
+alter table public.rankings add column if not exists winding text;
+
 -- 重置排名：存管理员密码，仅用于清空排名 RPC 校验
 create table if not exists public.app_config (
   key text primary key,
@@ -56,3 +59,19 @@ $$;
 
 grant execute on function public.reset_rankings(text) to anon;
 comment on function public.reset_rankings(text) is '管理员密码正确时清空 rankings 表';
+
+-- RPC：仅校验管理员密码，用于查看结果与画法比例
+create or replace function public.check_admin(secret text)
+returns jsonb language plpgsql security definer
+as $$
+declare
+  stored text;
+begin
+  select value into stored from public.app_config where key = 'reset_secret';
+  if stored is null or stored <> secret then
+    return jsonb_build_object('ok', false, 'error', '密码错误');
+  end if;
+  return jsonb_build_object('ok', true);
+end;
+$$;
+grant execute on function public.check_admin(text) to anon;
